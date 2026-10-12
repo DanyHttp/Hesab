@@ -164,6 +164,12 @@ button:disabled{opacity:.45;pointer-events:none}
   <div class="picker" id="picker"></div>
   <div class="row"><button id="pcancel">انصراف</button></div>
 </dialog>
+<dialog id="imp">
+  <label id="imsg" style="font-size:15px;color:var(--fg);margin-bottom:14px"></label>
+  <button class="big-btn" data-m="a"><svg class="i"><use href="#i-plus"/></svg><span>اضافه به اطلاعات فعلی<br><small class="muted">تراکنش‌های تکراری رد می‌شوند</small></span></button>
+  <button class="big-btn" data-m="r" style="color:var(--exp)"><svg class="i"><use href="#i-trash"/></svg><span>جایگزینی کامل<br><small class="muted">همهٔ اطلاعات فعلی حذف می‌شود</small></span></button>
+  <div class="row"><button data-m="x">انصراف</button></div>
+</dialog>
 <div id="report"></div>
 <input type="file" id="file" accept="application/json,.json" hidden>
 
@@ -391,12 +397,24 @@ $('#file').onchange=async e=>{
     const okT=x=>x&&(x.type==='e'||x.type==='i')&&+x.amount>0&&/^\d{4}-\d\d-\d\d$/.test(x.date)&&!isNaN(Date.parse(x.date));
     const okC=a=>Array.isArray(a)&&a.length&&a.every(Array.isArray);
     if(!Array.isArray(d.tx)||!d.tx.every(okT))throw 0;
-    if(!confirm(`${fa(d.tx.length)} تراکنش جایگزین اطلاعات فعلی شود؟`))return;
-    txs=d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date}));
-    if(okC(d.cats?.e)&&okC(d.cats?.i))cats={e:d.cats.e.map(([n,k])=>[String(n),String(k)]),i:d.cats.i.map(([n,k])=>[String(n),String(k)])};
-    save();tab='list';render();toast('بازگردانی شد')}
+    imp={tx:d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date})),
+      cats:okC(d.cats?.e)&&okC(d.cats?.i)?{e:d.cats.e.map(([n,k])=>[String(n),String(k)]),i:d.cats.i.map(([n,k])=>[String(n),String(k)])}:null};
+    $('#imsg').textContent=`فایل ${fa(imp.tx.length)} تراکنش دارد و الان ${fa(txs.length)} تراکنش ثبت شده. چه کار کنم؟`;
+    $('#imp').showModal()}
   catch{alert('فایل معتبر نیست')}
   finally{e.target.value=''}
+};
+let imp=null;
+$('#imp').onclick=e=>{
+  const m=e.target.closest('button')?.dataset.m;if(!m)return;
+  $('#imp').close();if(m==='x')return;
+  if(m==='r'){txs=imp.tx;if(imp.cats)cats=imp.cats;save();tab='list';render();return toast('بازگردانی شد')}
+  // merge: same id = same transaction (ids are creation timestamps), keep the current copy
+  const ids=new Set(txs.map(t=>t.id)), add=imp.tx.filter(t=>!ids.has(t.id));
+  txs.push(...add);
+  if(imp.cats)for(const y of['e','i'])for(const c of imp.cats[y])if(!cats[y].some(x=>x[0]===c[0]))cats[y].push(c);
+  save();tab='list';render();
+  toast(`${fa(add.length)} تراکنش اضافه شد`+(add.length<imp.tx.length?`، ${fa(imp.tx.length-add.length)} تکراری رد شد`:''));
 };
 
 render();
