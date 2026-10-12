@@ -149,9 +149,10 @@ button:disabled{opacity:.45;pointer-events:none}
   <div class="chips" id="chips"></div>
   <label for="note">برای چی بود؟</label>
   <input id="note" placeholder="مثلاً ناهار با دوستان" autocomplete="off">
-  <label for="date">تاریخ</label>
-  <input id="date" type="date" style="margin-bottom:4px">
-  <div class="muted" id="jdate" style="margin:0 2px 16px"></div>
+  <label>تاریخ</label>
+  <div class="sel" id="dsel" style="margin-bottom:14px"></div>
+  <label for="time">ساعت</label>
+  <input id="time" type="time" style="margin-bottom:18px">
   <div class="row">
     <button class="del" id="del" aria-label="حذف"><svg class="i"><use href="#i-trash"/></svg></button>
     <button id="cancel">انصراف</button>
@@ -197,6 +198,9 @@ const svg=n=>`<svg class="i"><use href="#i-${n}"/></svg>`;
 // category value is an icon name; older saved data may hold an emoji, render it as text
 const ic=v=>document.getElementById('i-'+v)?svg(v):esc(v||'');
 const icon=(t,c)=>ic((cats[t].find(x=>x[0]===c)||[0,'tag'])[1]);
+const fd=s=>s.replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]);
+// chronological order: date, then time (older entries may have none), then creation id
+const byT=(a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.time||'').localeCompare(b.time||'')||a.id-b.id;
 const sum=a=>a.reduce((s,t)=>s+t.amount,0);
 const money=n=>fa(n)+' <small>تومان</small>';
 const inMonth=k=>txs.filter(t=>key(jp(t.date))===k);
@@ -230,10 +234,10 @@ function render(){
   else if(tab==='list'){
     const days=[...new Set(list.map(t=>t.date))].sort().reverse();
     days.forEach((d,n)=>{
-      const dl=list.filter(t=>t.date===d).sort((a,b)=>b.id-a.id), net=sum(dl.filter(t=>t.type==='i'))-sum(dl.filter(t=>t.type==='e'));
+      const dl=list.filter(t=>t.date===d).sort((a,b)=>byT(b,a)), net=sum(dl.filter(t=>t.type==='i'))-sum(dl.filter(t=>t.type==='e'));
       h+=`<div class="day rise" style="--n:${Math.min(n+1,8)}"><span>${jl(d)}</span><span dir="ltr">${net<0?'−':''}${fa(Math.abs(net))}</span></div><div class="card group rise" style="--n:${Math.min(n+1,8)}">`;
       for(const t of dl) h+=`<button class="tx" onclick="openSheet(${t.id})"><div class="ic">${icon(t.type,t.cat)}</div>
-        <div class="m"><div>${esc(t.cat)}</div>${t.note?`<div>${esc(t.note)}</div>`:''}</div>
+        <div class="m"><div>${esc(t.cat)}</div>${t.time||t.note?`<div>${[t.time&&fd(t.time),esc(t.note)].filter(Boolean).join(' · ')}</div>`:''}</div>
         <div class="a ${t.type==='i'?'inc':'exp'}" dir="ltr">${t.type==='i'?'+':'−'}${fa(t.amount)}</div></button>`;
       h+='</div>';
     });
@@ -297,12 +301,11 @@ function chips(){
 function openSheet(id){
   edit=id?txs.find(t=>t.id===id):null;
   ftype=edit?edit.type:'e'; fcat=edit?edit.cat:cats[ftype][0][0];
-  $('#amt').value=edit?fa(edit.amount):''; $('#note').value=edit?edit.note:''; $('#date').value=edit?edit.date:today();
-  $('#del').style.display=edit?'':'none'; $('#err').textContent=''; $('#amt').removeAttribute('aria-invalid'); jd(); chips(); dlg.showModal();
+  $('#amt').value=edit?fa(edit.amount):''; $('#note').value=edit?edit.note:'';
+  $('#dsel').innerHTML=jsel('s',edit?edit.date:today(),''); $('#time').value=edit?edit.time||'':new Date().toTimeString().slice(0,5);
+  $('#del').style.display=edit?'':'none'; $('#err').textContent=''; $('#amt').removeAttribute('aria-invalid'); chips(); dlg.showModal();
 }
-const jd=()=>$('#jdate').innerHTML=$('#date').value?svg('calendar-blank')+' '+jl($('#date').value):'';
 $('#fab').onclick=()=>openSheet();
-$('#date').oninput=jd;
 $('#cancel').onclick=()=>dlg.close();
 $('#seg').onclick=e=>{const y=e.target.closest('button')?.dataset.y;if(y){ftype=y;fcat=cats[y][0][0];chips()}};
 $('#amt').oninput=e=>{const v=norm(e.target.value).replace(/\D/g,'');e.target.value=v?fa(v):'';$('#err').textContent='';e.target.removeAttribute('aria-invalid')};
@@ -323,10 +326,9 @@ $('#picker').onclick=e=>{
 };
 $('#pcancel').onclick=()=>pick.close();
 $('#ok').onclick=()=>{
-  const amount=+norm($('#amt').value), date=$('#date').value;
+  const amount=+norm($('#amt').value), date=jget('s');
   if(!amount){$('#err').textContent='مبلغ را وارد کن.';$('#amt').setAttribute('aria-invalid','true');return $('#amt').focus()}
-  if(!date){$('#err').textContent='تاریخ را انتخاب کن.';return}
-  const t={id:edit?edit.id:Date.now(),type:ftype,amount,cat:fcat,note:$('#note').value.trim(),date};
+  const t={id:edit?edit.id:Date.now(),type:ftype,amount,cat:fcat,note:$('#note').value.trim(),date,time:$('#time').value};
   if(edit)txs[txs.indexOf(edit)]=t;else txs.push(t);
   save();ym=key(jp(date));dlg.close();render();toast('ذخیره شد');
 };
@@ -356,16 +358,19 @@ function rangeOf(){
     default:return rng.f<=rng.t?[rng.f,rng.t]:[rng.t,rng.f];
   }
 }
-const inRange=()=>{const[f,t]=rangeOf();return txs.filter(x=>x.date>=f&&x.date<=t).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.id-b.id)};
+const inRange=()=>{const[f,t]=rangeOf();return txs.filter(x=>x.date>=f&&x.date<=t).sort(byT)};
 const rlab=l=>{const[f,t]=rangeOf();return rng.mode==='all'?(l.length?`${jl(l[0].date)} تا ${jl(l.at(-1).date)}`:''):`${jl(f)} تا ${jl(t)}`};
 function setR(m){rng.mode=m;render()}
-function selR(){for(const k of['f','t'])rng[k]=j2i(+$('#'+k+'y').value,+$('#'+k+'m').value,+$('#'+k+'d').value);prev()}
-function dsel(k){
-  const j=jp(rng[k]), cy=_c.y, o=(a,s,f)=>a.map(v=>`<option value="${v}"${v==s?' selected':''}>${f(v)}</option>`).join('');
-  return`<div class="sel"><select id="${k}d" onchange="selR()" aria-label="روز">${o([...Array(31)].map((_,i)=>i+1),j.d,fa)}</select>
-  <select id="${k}m" onchange="selR()" aria-label="ماه">${o(MN.map((_,i)=>i+1),j.m,v=>MN[v-1])}</select>
-  <select id="${k}y" onchange="selR()" aria-label="سال">${o([...Array(8)].map((_,i)=>cy-6+i),j.y,v=>fa(v,false))}</select></div>`;
+function selR(){for(const k of['f','t'])rng[k]=jget(k);prev()}
+// Jalali day/month/year selects; jget clamps overflow (31 Mehr -> 30) via j2i
+function jsel(k,iso,fn){
+  const j=jp(iso), y0=Math.min(_c.y-6,j.y), o=(a,s,f)=>a.map(v=>`<option value="${v}"${v==s?' selected':''}>${f(v)}</option>`).join('');
+  return`<select id="${k}d" onchange="${fn}" aria-label="روز">${o([...Array(31)].map((_,i)=>i+1),j.d,fa)}</select>
+  <select id="${k}m" onchange="${fn}" aria-label="ماه">${o(MN.map((_,i)=>i+1),j.m,v=>MN[v-1])}</select>
+  <select id="${k}y" onchange="${fn}" aria-label="سال">${o([...Array(_c.y+2-y0)].map((_,i)=>y0+i),j.y,v=>fa(v,false))}</select>`;
 }
+const jget=k=>j2i(+$('#'+k+'y').value,+$('#'+k+'m').value,+$('#'+k+'d').value);
+const dsel=k=>`<div class="sel">${jsel(k,rng[k],'selR()')}</div>`;
 function prev(){
   const l=inRange(), inc=sum(l.filter(t=>t.type==='i')), ex=sum(l.filter(t=>t.type==='e'));
   $('#rp').innerHTML=l.length?`<p class="muted" style="margin:12px 2px 0">${rlab(l)}</p><div class="rs"><div><small>تعداد</small><b>${fa(l.length)}</b></div><div><small>درآمد</small><b class="inc">${fa(inc)}</b></div><div><small>خرج</small><b class="exp">${fa(ex)}</b></div></div>`
@@ -375,7 +380,7 @@ function prev(){
 function exCsv(){
   const l=inRange();if(!l.length)return;
   const q=s=>{s=String(s??'');if(/^[=+\-@]/.test(s))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'}, p2=n=>String(n).padStart(2,'0');
-  const rows=[['تاریخ شمسی','تاریخ میلادی','نوع','دسته','مبلغ (تومان)','توضیح'],...l.map(x=>{const j=jp(x.date);return[`${j.y}/${p2(j.m)}/${p2(j.d)}`,x.date,x.type==='i'?'درآمد':'خرج',x.cat,x.amount,x.note]})];
+  const rows=[['تاریخ','ساعت','نوع','دسته','مبلغ (تومان)','توضیح'],...l.map(x=>{const j=jp(x.date);return[`${j.y}/${p2(j.m)}/${p2(j.d)}`,x.time||'',x.type==='i'?'درآمد':'خرج',x.cat,x.amount,x.note]})];
   dl(['﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n')],`hesab-${l[0].date}_${l.at(-1).date}.csv`,'text/csv;charset=utf-8');
   toast('فایل CSV ساخته شد');
 }
@@ -386,7 +391,7 @@ function exPdf(){
   $('#report').innerHTML=`<h1>گزارش حسابداری</h1><p>${rlab(l)}</p>
     ${tb(['درآمد','خرج','تراز','تعداد'],[[fa(inc),fa(ex),(inc-ex<0?'−':'')+fa(Math.abs(inc-ex)),fa(l.length)]])}
     ${rank.length?`<h2>خرج به تفکیک دسته</h2>${tb(['دسته','مبلغ','سهم'],rank.map(([c,v])=>[esc(c),fa(v),fa(v/ex*100)+'٪']))}`:''}
-    <h2>تراکنش‌ها</h2>${tb(['تاریخ','نوع','دسته','توضیح','مبلغ (تومان)'],l.map(x=>[jl(x.date),x.type==='i'?'درآمد':'خرج',esc(x.cat),esc(x.note),fa(x.amount)]))}`;
+    <h2>تراکنش‌ها</h2>${tb(['تاریخ','نوع','دسته','توضیح','مبلغ (تومان)'],l.map(x=>[jl(x.date)+(x.time?' · '+fd(x.time):''),x.type==='i'?'درآمد':'خرج',esc(x.cat),esc(x.note),fa(x.amount)]))}`;
   window.print();
 }
 onafterprint=()=>$('#report').innerHTML='';
@@ -397,7 +402,7 @@ $('#file').onchange=async e=>{
     const okT=x=>x&&(x.type==='e'||x.type==='i')&&+x.amount>0&&/^\d{4}-\d\d-\d\d$/.test(x.date)&&!isNaN(Date.parse(x.date));
     const okC=a=>Array.isArray(a)&&a.length&&a.every(Array.isArray);
     if(!Array.isArray(d.tx)||!d.tx.every(okT))throw 0;
-    imp={tx:d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date})),
+    imp={tx:d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date,time:/^\d\d:\d\d$/.test(x.time)?x.time:''})),
       cats:okC(d.cats?.e)&&okC(d.cats?.i)?{e:d.cats.e.map(([n,k])=>[String(n),String(k)]),i:d.cats.i.map(([n,k])=>[String(n),String(k)])}:null};
     $('#imsg').textContent=`فایل ${fa(imp.tx.length)} تراکنش دارد و الان ${fa(txs.length)} تراکنش ثبت شده. چه کار کنم؟`;
     $('#imp').showModal()}
