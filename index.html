@@ -38,7 +38,9 @@ small{font-size:.8em}
 .nav button{width:44px;height:44px;border-radius:var(--rc);background:var(--card);border:1px solid var(--line);display:grid;place-items:center;font-size:18px}
 /* hero balance */
 .hero{background:var(--ink);color:var(--on-ink);border-radius:var(--r);padding:20px 20px 16px}
-.hero>small{color:var(--ink-mut);display:block}
+.hero small{color:var(--ink-mut)}.hero .sub{display:block;font-size:13px;margin-top:2px}
+.hero .hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hero .hd button{font-size:12px;color:var(--ink-mut);border:1px solid #ffffff2a;border-radius:999px;padding:3px 10px;display:flex;align-items:center;gap:4px}
 .hero .big{display:block;font-size:30px;font-weight:700;line-height:1.4;letter-spacing:-.01em}
 .hero .big small{font-size:14px;font-weight:400;color:var(--ink-mut)}
 .io{display:grid;grid-template-columns:1fr 1fr;margin-top:14px;padding-top:14px;border-top:1px solid #ffffff1f}
@@ -97,7 +99,7 @@ label{display:block;font-size:13px;color:var(--mut);margin:0 2px 5px}
 input{width:100%;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:var(--rc);padding:11px 12px;margin-bottom:14px}
 input::placeholder{color:var(--mut);opacity:.7}
 input[aria-invalid=true]{border-color:var(--exp)}
-#amt{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px}
+#amt,#bamt{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px}
 .err{color:var(--exp);font-size:13px;min-height:1.7em;margin:0 2px 8px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
 .chips button{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:14px;display:flex;align-items:center;gap:6px}
@@ -160,6 +162,19 @@ button:disabled{opacity:.45;pointer-events:none}
   </div>
 </dialog>
 
+<dialog id="bdlg">
+  <label for="bamt">موجودی اولیه (تومان)</label>
+  <input id="bamt" inputmode="numeric" placeholder="مثلاً ۳٬۰۰۰٬۰۰۰" autocomplete="off">
+  <div class="muted" style="margin:0 2px 14px">پولی که اول این روز داشتی. تراکنش‌های از این روز به بعد به آن اضافه یا از آن کم می‌شوند.</div>
+  <label>از تاریخ</label>
+  <div class="sel" id="bsel" style="margin-bottom:18px"></div>
+  <div class="row">
+    <button class="del" id="bdel" aria-label="حذف موجودی اولیه"><svg class="i"><use href="#i-trash"/></svg></button>
+    <button id="bcancel">انصراف</button>
+    <button class="ok" id="bok">ذخیره</button>
+  </div>
+</dialog>
+
 <dialog id="pick">
   <label>آیکون دستهٔ «<span id="pname"></span>» را انتخاب کن</label>
   <div class="picker" id="picker"></div>
@@ -183,8 +198,8 @@ const DEF={e:[['خوراک','fork-knife'],['حمل‌ونقل','car'],['خانه
 const PICK=['heart','airplane','paw-print','gas-pump','device-mobile','coffee','wrench','music-notes','barbell','wallet','gift','house','car','shopping-bag','tag'];
 const $=s=>document.querySelector(s);
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch{return d}};
-let txs=load('tx',[]), cats=load('cats',DEF), tab='list', ym=null, edit=null, ftype='e', fcat=null, charts=[], pendingName='';
-const save=()=>{localStorage.setItem('tx',JSON.stringify(txs));localStorage.setItem('cats',JSON.stringify(cats))};
+let txs=load('tx',[]), cats=load('cats',DEF), start=load('start',null), tab='list', ym=null, edit=null, ftype='e', fcat=null, charts=[], pendingName='';
+const save=()=>{localStorage.setItem('tx',JSON.stringify(txs));localStorage.setItem('cats',JSON.stringify(cats));localStorage.setItem('start',JSON.stringify(start))};
 const fa=(n,g=true)=>(+n).toLocaleString('fa-IR',{useGrouping:g,maximumFractionDigits:0});
 const norm=s=>s.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,٬،\s]/g,'');
 const pf=new Intl.DateTimeFormat('en-u-ca-persian-nu-latn',{year:'numeric',month:'numeric',day:'numeric'});
@@ -202,6 +217,9 @@ const fd=s=>s.replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]);
 // chronological order: date, then time (older entries may have none), then creation id
 const byT=(a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.time||'').localeCompare(b.time||'')||a.id-b.id;
 const sum=a=>a.reduce((s,t)=>s+t.amount,0);
+const sgn=n=>`<span dir="ltr">${n<0?'−':''}${fa(Math.abs(n))}</span>`;
+// real balance at end of day `iso`: opening balance + every transaction from its date on
+const balTo=iso=>start.amount+txs.reduce((s,t)=>t.date>=start.date&&t.date<=iso?s+(t.type==='i'?t.amount:-t.amount):s,0);
 const money=n=>fa(n)+' <small>تومان</small>';
 const inMonth=k=>txs.filter(t=>key(jp(t.date))===k);
 const css=v=>getComputedStyle(document.body).getPropertyValue(v).trim();
@@ -227,15 +245,17 @@ function render(){
     return prev();
   }
   const cur=unkey(ym), list=inMonth(ym), inc=sum(list.filter(t=>t.type==='i')), ex=sum(list.filter(t=>t.type==='e')), bal=inc-ex;
+  const end=j2i(cur.y,cur.m,31), hasB=!!start&&end>=start.date, big=hasB?balTo(end):bal;
   let h=`<div class="nav"><button onclick="mv(-1)" aria-label="ماه قبل">${svg('caret-right')}</button><b>${MN[cur.m-1]} ${fa(cur.y,false)}</b><button onclick="mv(1)" aria-label="ماه بعد">${svg('caret-left')}</button></div>
-  <section class="hero rise"><small>تراز ماه</small><strong class="big" style="${bal<0?'color:var(--exp-ink)':''}"><span dir="ltr">${bal<0?'−':''}${fa(Math.abs(bal))}</span> <small>تومان</small></strong>
+  <section class="hero rise"><div class="hd"><small>${hasB?(ym===key(jp(today()))?'موجودی فعلی':'موجودی پایان '+MN[cur.m-1]):'تراز ماه'}</small><button onclick="openBal()">${svg('wallet')} ${start?'موجودی اولیه':'ثبت موجودی اولیه'}</button></div>
+  <strong class="big" style="${big<0?'color:var(--exp-ink)':''}">${sgn(big)} <small>تومان</small></strong>${hasB?`<small class="sub">تراز این ماه ${sgn(bal)}</small>`:''}
   <div class="io"><div><span class="a-i">${svg('arrow-down-left')} درآمد</span><b>${fa(inc)}</b></div><div><span class="a-e">${svg('arrow-up-right')} خرج</span><b>${fa(ex)}</b></div></div></section>`;
   if(!list.length) h+=`<div class="empty rise" style="--n:2"><div class="ic">${svg('wallet')}</div><p>این ماه تراکنشی ثبت نشده.</p><button class="cta" onclick="openSheet()">ثبت اولین تراکنش</button></div>`;
   else if(tab==='list'){
     const days=[...new Set(list.map(t=>t.date))].sort().reverse();
     days.forEach((d,n)=>{
       const dl=list.filter(t=>t.date===d).sort((a,b)=>byT(b,a)), net=sum(dl.filter(t=>t.type==='i'))-sum(dl.filter(t=>t.type==='e'));
-      h+=`<div class="day rise" style="--n:${Math.min(n+1,8)}"><span>${jl(d)}</span><span dir="ltr">${net<0?'−':''}${fa(Math.abs(net))}</span></div><div class="card group rise" style="--n:${Math.min(n+1,8)}">`;
+      h+=`<div class="day rise" style="--n:${Math.min(n+1,8)}"><span>${jl(d)}</span><span>${sgn(net)}${hasB&&d>=start.date?` · مانده ${sgn(balTo(d))}`:''}</span></div><div class="card group rise" style="--n:${Math.min(n+1,8)}">`;
       for(const t of dl) h+=`<button class="tx" onclick="openSheet(${t.id})"><div class="ic">${icon(t.type,t.cat)}</div>
         <div class="m"><div>${esc(t.cat)}</div>${t.time||t.note?`<div>${[t.time&&fd(t.time),esc(t.note)].filter(Boolean).join(' · ')}</div>`:''}</div>
         <div class="a ${t.type==='i'?'inc':'exp'}" dir="ltr">${t.type==='i'?'+':'−'}${fa(t.amount)}</div></button>`;
@@ -308,7 +328,18 @@ function openSheet(id){
 $('#fab').onclick=()=>openSheet();
 $('#cancel').onclick=()=>dlg.close();
 $('#seg').onclick=e=>{const y=e.target.closest('button')?.dataset.y;if(y){ftype=y;fcat=cats[y][0][0];chips()}};
-$('#amt').oninput=e=>{const v=norm(e.target.value).replace(/\D/g,'');e.target.value=v?fa(v):'';$('#err').textContent='';e.target.removeAttribute('aria-invalid')};
+const fmtAmt=e=>{const v=norm(e.target.value).replace(/\D/g,'');e.target.value=v?fa(v):''};
+$('#amt').oninput=e=>{fmtAmt(e);$('#err').textContent='';e.target.removeAttribute('aria-invalid')};
+/* ---- opening balance ---- */
+const bdlg=$('#bdlg');
+function openBal(){
+  $('#bamt').value=start?fa(start.amount):'';$('#bsel').innerHTML=jsel('b',start?start.date:j2i(_c.y,_c.m,1),'');
+  $('#bdel').style.display=start?'':'none';bdlg.showModal();
+}
+$('#bamt').oninput=fmtAmt;
+$('#bcancel').onclick=()=>bdlg.close();
+$('#bok').onclick=()=>{if($('#bamt').value==='')return $('#bamt').focus();start={amount:+norm($('#bamt').value),date:jget('b')};save();bdlg.close();render();toast('موجودی اولیه ثبت شد')};
+$('#bdel').onclick=()=>{if(confirm('موجودی اولیه حذف شود؟')){start=null;save();bdlg.close();render()}};
 $('#chips').onclick=e=>{
   const c=e.target.closest('button')?.dataset.c;if(!c)return;
   if(c==='+'){
@@ -337,7 +368,7 @@ $('#tabs').onclick=e=>{const b=e.target.closest('button');if(b){tab=b.dataset.t;
 
 /* ---- backup ---- */
 const dl=(parts,name,type)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(parts,{type}));a.download=name;a.click()};
-const exp=()=>dl([JSON.stringify({tx:txs,cats})],`hesab-${today()}.json`,'application/json');
+const exp=()=>dl([JSON.stringify({tx:txs,cats,start})],`hesab-${today()}.json`,'application/json');
 
 /* ---- report export (range) ---- */
 const addD=(iso,n)=>new Date(Date.parse(iso+'T12:00:00Z')+n*864e5).toISOString().slice(0,10);
@@ -403,6 +434,7 @@ $('#file').onchange=async e=>{
     const okC=a=>Array.isArray(a)&&a.length&&a.every(Array.isArray);
     if(!Array.isArray(d.tx)||!d.tx.every(okT))throw 0;
     imp={tx:d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date,time:/^\d\d:\d\d$/.test(x.time)?x.time:''})),
+      start:d.start&&+d.start.amount>=0&&/^\d{4}-\d\d-\d\d$/.test(d.start.date)?{amount:+d.start.amount,date:d.start.date}:null,
       cats:okC(d.cats?.e)&&okC(d.cats?.i)?{e:d.cats.e.map(([n,k])=>[String(n),String(k)]),i:d.cats.i.map(([n,k])=>[String(n),String(k)])}:null};
     $('#imsg').textContent=`فایل ${fa(imp.tx.length)} تراکنش دارد و الان ${fa(txs.length)} تراکنش ثبت شده. چه کار کنم؟`;
     $('#imp').showModal()}
@@ -413,10 +445,11 @@ let imp=null;
 $('#imp').onclick=e=>{
   const m=e.target.closest('button')?.dataset.m;if(!m)return;
   $('#imp').close();if(m==='x')return;
-  if(m==='r'){txs=imp.tx;if(imp.cats)cats=imp.cats;save();tab='list';render();return toast('بازگردانی شد')}
+  if(m==='r'){txs=imp.tx;start=imp.start;if(imp.cats)cats=imp.cats;save();tab='list';render();return toast('بازگردانی شد')}
   // merge: same id = same transaction (ids are creation timestamps), keep the current copy
   const ids=new Set(txs.map(t=>t.id)), add=imp.tx.filter(t=>!ids.has(t.id));
   txs.push(...add);
+  if(!start)start=imp.start;  // merge keeps an opening balance already set by hand
   if(imp.cats)for(const y of['e','i'])for(const c of imp.cats[y])if(!cats[y].some(x=>x[0]===c[0]))cats[y].push(c);
   save();tab='list';render();
   toast(`${fa(add.length)} تراکنش اضافه شد`+(add.length<imp.tx.length?`، ${fa(imp.tx.length-add.length)} تکراری رد شد`:''));
