@@ -68,6 +68,9 @@ small{font-size:.8em}
 .card.p{padding:14px 16px}
 .card h3{margin:0 0 10px;font-size:14px;color:var(--mut);font-weight:600}
 .ch{height:230px;position:relative}
+.lg{display:flex;gap:16px;font-size:13px;color:var(--mut);margin:-2px 0 8px}
+.lg i{display:inline-block;width:20px;height:3px;border-radius:2px;vertical-align:middle;margin-inline-end:6px}
+.lg i.dash{background:repeating-linear-gradient(90deg,var(--mut) 0 4px,transparent 4px 8px)}
 .ctr{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none;line-height:1.5}
 .ctr small{color:var(--mut)}.ctr b{font-size:16px}
 .kpi{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -245,7 +248,7 @@ function statsHtml(list,ex,cur){
     <div class="card p"><small>بیشترین خرج</small><strong>${big?money(big.amount):'-'}</strong>${big?`<small>${esc(big.cat)}${big.note?' · '+esc(big.note):''}</small>`:''}</div></div>`;
   if(rank.length) h+=`<div class="card p rise" style="--n:1"><h3>خرج به تفکیک دسته</h3><div class="ch"><canvas id="c1" aria-label="نمودار دونات خرج به تفکیک دسته"></canvas><div class="ctr"><small>جمع خرج</small><b>${fa(ex)}</b></div></div>
     ${rank.map(([c,v],i)=>`<div class="rank"><i style="background:${PAL[i%PAL.length]}"></i><div><div class="t"><span>${esc(c)}</span><span>${fa(v)} · ${fa(v/ex*100)}٪</span></div><div class="bar" style="width:${v/rank[0][1]*100}%;background:${PAL[i%PAL.length]}"></div></div></div>`).join('')}</div>`;
-  return h+`<div class="card p rise" style="--n:2"><h3>روند خرج تجمعی، در برابر ماه قبل</h3><div class="ch"><canvas id="c4" aria-label="نمودار خطی خرج تجمعی"></canvas></div></div>
+  return h+`<div class="card p rise" style="--n:2"><h3>روند خرج تجمعی، در برابر ماه قبل</h3><div class="lg"><span><i style="background:var(--pri)"></i>این ماه</span><span><i class="dash"></i>ماه قبل</span></div><div class="ch"><canvas id="c4" aria-label="نمودار خطی خرج تجمعی"></canvas></div></div>
     <div class="card p rise" style="--n:2"><h3>درآمد و خرج ۶ ماه اخیر</h3><div class="ch"><canvas id="c2" aria-label="نمودار درآمد و خرج ۶ ماه اخیر"></canvas></div></div>
     <div class="card p rise" style="--n:3"><h3>خرج روزانهٔ این ماه</h3><div class="ch"><canvas id="c3" aria-label="نمودار خرج روزانه"></canvas></div></div></div>`;
 }
@@ -254,7 +257,7 @@ function drawCharts(list,cur){
   Chart.defaults.font.family='Vazirmatn,system-ui,sans-serif';Chart.defaults.color=fg;
   Chart.defaults.animation=matchMedia('(prefers-reduced-motion:reduce)').matches?false:{duration:700,easing:'easeOutQuart'};
   const tip={rtl:true,callbacks:{label:c=>` ${c.dataset.label?c.dataset.label+': ':''}${fa(c.parsed.y??c.parsed)} تومان`}};
-  const axes={x:{reverse:true,grid:{display:false},border:{display:false}},y:{position:'right',border:{display:false},grid:{color:grid},ticks:{callback:v=>compact.format(v)}}};
+  const axes={x:{grid:{display:false},border:{display:false}},y:{position:'left',beginAtZero:true,border:{display:false},grid:{color:grid},ticks:{callback:v=>compact.format(v)}}};
   const mk=(id,cfg)=>{const el=$(id);if(el)charts.push(new Chart(el,{...cfg,options:{maintainAspectRatio:false,...cfg.options}}))};
   const rank=byCat(list.filter(t=>t.type==='e'));
   mk('#c1',{type:'doughnut',data:{labels:rank.map(r=>r[0]),datasets:[{data:rank.map(r=>r[1]),backgroundColor:rank.map((_,i)=>PAL[i%PAL.length]),borderColor:css('--card'),borderWidth:3}]},
@@ -264,11 +267,15 @@ function drawCharts(list,cur){
     options:{scales:axes,plugins:{legend:{rtl:true,labels:{boxWidth:10,boxHeight:10,useBorderRadius:true,borderRadius:3}},tooltip:tip}}});
   const prevL=inMonth(ym-1), n=Math.max(mlen(ym,list),mlen(ym-1,prevL)), isNow=ym===key(jp(today()));
   const cum=(l,upto)=>{const a=Array(n).fill(0);l.filter(t=>t.type==='e').forEach(t=>a[jp(t.date).d-1]+=t.amount);let s=0;return a.map((v,i)=>i<upto?(s+=v):null)};
-  const ln={tension:.3,pointRadius:0,pointHoverRadius:5,borderWidth:2.5};
+  const pri=css('--pri'), dot=(d)=>{const last=d.reduce((m,v,i)=>v==null?m:i,-1);const ch=d.map((v,i)=>v!=null&&(i===0?v>0:v!==d[i-1]));const few=ch.filter(Boolean).length<=12;return d.map((v,i)=>v==null?0:i===last?5:few&&ch[i]?3.5:0)};
+  const cur_=cum(list,isNow?jp(today()).d:mlen(ym,list)), prv_=prevL.some(t=>t.type==='e')?cum(prevL,mlen(ym-1,prevL)):null;
   mk('#c4',{type:'line',data:{labels:[...Array(n)].map((_,i)=>fa(i+1)),datasets:[
-    {...ln,label:'این ماه',data:cum(list,isNow?jp(today()).d:mlen(ym,list)),borderColor:css('--pri'),backgroundColor:css('--pri')+'1f',fill:true},
-    ...(prevL.some(t=>t.type==='e')?[{...ln,label:'ماه قبل',data:cum(prevL,mlen(ym-1,prevL)),borderColor:css('--mut'),borderDash:[5,4],borderWidth:2}]:[])]},
-    options:{interaction:{mode:'index',intersect:false},scales:{...axes,x:{...axes.x,ticks:{autoSkip:true,maxTicksLimit:10}}},plugins:{legend:{rtl:true,labels:{boxWidth:10,boxHeight:10}},tooltip:tip}}});
+    {label:'این ماه',data:cur_,borderColor:pri,borderWidth:2.5,cubicInterpolationMode:'monotone',fill:true,order:1,
+      backgroundColor:pri+'22',
+      pointRadius:dot(cur_),pointHoverRadius:6,pointBackgroundColor:css('--card'),pointBorderColor:pri,pointBorderWidth:2},
+    ...(prv_?[{label:'ماه قبل',data:prv_,borderColor:css('--mut'),borderWidth:1.5,borderDash:[4,4],cubicInterpolationMode:'monotone',pointRadius:0,pointHoverRadius:4,order:2}]:[])]},
+    options:{interaction:{mode:'index',intersect:false},scales:{x:{...axes.x,ticks:{autoSkip:true,maxTicksLimit:8,maxRotation:0}},y:{...axes.y,ticks:{...axes.y.ticks,maxTicksLimit:5}}},
+      plugins:{legend:{display:false},tooltip:{...tip,callbacks:{...tip.callbacks,title:i=>'روز '+i[0].label}}}}});
   const nd=mlen(ym,list), dd=Array(nd).fill(0);
   list.filter(t=>t.type==='e').forEach(t=>dd[jp(t.date).d-1]+=t.amount);
   mk('#c3',{type:'bar',data:{labels:dd.map((_,i)=>fa(i+1)),datasets:[{data:dd,backgroundColor:css('--pri'),borderRadius:4,borderSkipped:false}]},
