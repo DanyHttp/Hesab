@@ -56,7 +56,7 @@ small{font-size:.8em}
 .tx:active{transform:none;background:var(--bg)}
 .ic{width:40px;height:40px;border-radius:var(--rc);background:var(--bg);display:grid;place-items:center;font-size:20px;flex:none}
 .tx .m{flex:1;min-width:0}
-.tx .m div:last-child{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx .m div+div{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tx .a{font-weight:700;white-space:nowrap}
 /* empty */
 .empty{text-align:center;color:var(--mut);padding:44px 0 8px}
@@ -387,14 +387,21 @@ onafterprint=()=>$('#report').innerHTML='';
 
 $('#file').onchange=async e=>{
   try{const d=JSON.parse(await e.target.files[0].text());
-    if(!Array.isArray(d.tx)||!confirm(`${fa(d.tx.length)} تراکنش جایگزین اطلاعات فعلی شود؟`))return;
-    txs=d.tx;cats=d.cats||cats;save();tab='list';render();toast('بازگردانی شد')}
+    // validate + coerce: a bad file must not brick the app or inject markup (ids land in onclick)
+    const okT=x=>x&&(x.type==='e'||x.type==='i')&&+x.amount>0&&/^\d{4}-\d\d-\d\d$/.test(x.date)&&!isNaN(Date.parse(x.date));
+    const okC=a=>Array.isArray(a)&&a.length&&a.every(Array.isArray);
+    if(!Array.isArray(d.tx)||!d.tx.every(okT))throw 0;
+    if(!confirm(`${fa(d.tx.length)} تراکنش جایگزین اطلاعات فعلی شود؟`))return;
+    txs=d.tx.map((x,i)=>({id:+x.id||Date.now()+i,type:x.type,amount:+x.amount,cat:String(x.cat??'سایر'),note:String(x.note??''),date:x.date}));
+    if(okC(d.cats?.e)&&okC(d.cats?.i))cats={e:d.cats.e.map(([n,k])=>[String(n),String(k)]),i:d.cats.i.map(([n,k])=>[String(n),String(k)])};
+    save();tab='list';render();toast('بازگردانی شد')}
   catch{alert('فایل معتبر نیست')}
-  e.target.value='';
+  finally{e.target.value=''}
 };
 
 render();
 document.fonts.ready.then(()=>tab==='stats'&&render());
+navigator.storage?.persist?.(); // ask browser not to evict localStorage
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script>
 </body>
